@@ -1,0 +1,36 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.example'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'io.netty:netty-all:4.1.100.Final'
+    
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
+
+    implementation 'org.postgresql:postgresql:42.6.0'
+    implementation 'com.zaxxer:HikariCP:5.1.0'
+
+    //redis
+    implementation 'io.lettuce:lettuce-core:6.3.0.RELEASE'
+
+    // JSON serialization / deserialization
+    implementation 'com.google.code.gson:gson:2.10.1'
+
+    // Argon2 password hashing
+    implementation 'de.mkammerer:argon2-jvm:2.11'
+}
+
+// Point to the class that will have your public static void main()
+application {
+    mainClass = 'com.auth.Main'
+}
