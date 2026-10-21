@@ -3,11 +3,6 @@ package com.auth.domain;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
-
-/**
- * Domain model representing a User in the authentication service.
- * Maps to the 'users' table in auth_schema.sql.
- */
 public class User {
     private UUID id;
     private String name;
@@ -21,8 +16,7 @@ public class User {
     public User() {
     }
 
-    public User(UUID id, String name, String email, String passwordHash,
-                Instant emailVerifiedAt, Instant createdAt, Instant updatedAt, Instant deletedAt) {
+    public User(UUID id, String name, String email, String passwordHash, Instant emailVerifiedAt, Instant createdAt, Instant updatedAt, Instant deletedAt) {
         this.id = id;
         this.name = name;
         this.email = email;
@@ -32,11 +26,7 @@ public class User {
         this.updatedAt = updatedAt;
         this.deletedAt = deletedAt;
     }
-
-    /**
-     * Factory method for creating a new manual user (name, email, passwordHash)
-     * prior to persisting in the database.
-     */
+    
     public static User createManual(String name, String email, String passwordHash) {
         User user = new User();
         user.setName(name);

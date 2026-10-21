@@ -3,9 +3,6 @@ package com.auth.domain;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Domain model representing credentials for manual/password-based user authentication.
- */
 public class UserCredential {
     private final UUID userId;
     private final String email;

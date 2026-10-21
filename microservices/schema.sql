@@ -63,7 +63,7 @@ CREATE TABLE organizations (
     name VARCHAR(255) NOT NULL,
     slug VARCHAR(255) UNIQUE NOT NULL CHECK (slug ~ '^[a-z0-9-]{3,63}$'),
     type VARCHAR(50) NOT NULL CHECK (type IN ('PERSONAL','TEAM')),
-    owner_user_id UUID REFERENCES users(id) ON DELETE RESTRICT,
+    owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,   -- FIX: every org has an owner
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMPTZ,
@@ -232,7 +232,8 @@ CREATE TABLE subscriptions (
     cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (provider IS NOT NULL OR provider_subscription_id IS NULL)
+    CHECK (provider IS NOT NULL OR provider_subscription_id IS NULL),
+    UNIQUE (id, org_id)                         -- FIX: target for tenancy-safe payments FK
 );
 CREATE INDEX idx_subscriptions_plan_id  ON subscriptions(plan_id);
 CREATE INDEX idx_subscriptions_customer ON subscriptions(provider, provider_customer_id);
@@ -243,7 +244,7 @@ CREATE TRIGGER update_subscriptions_updated_at
 CREATE TABLE payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-    subscription_id UUID REFERENCES subscriptions(id) ON DELETE RESTRICT,
+    subscription_id UUID,
     amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0),
     currency CHAR(3) NOT NULL DEFAULT 'USD',
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING'
@@ -255,7 +256,11 @@ CREATE TABLE payments (
     paid_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (provider, provider_payment_id)
+    UNIQUE (provider, provider_payment_id),
+    -- FIX: a payment's subscription must belong to the same org
+    CONSTRAINT payments_subscription_org_fk
+        FOREIGN KEY (subscription_id, org_id)
+        REFERENCES subscriptions (id, org_id) ON DELETE RESTRICT
 );
 CREATE INDEX idx_payments_org_id          ON payments(org_id, created_at DESC);
 CREATE INDEX idx_payments_subscription_id ON payments(subscription_id);
@@ -415,10 +420,11 @@ CREATE UNIQUE INDEX deployments_one_live
 CREATE TRIGGER update_deployments_updated_at
     BEFORE UPDATE ON deployments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- circular FK: services.active_deployment_id -> deployments.id
+-- circular FK: services.active_deployment_id -> deployments (same service only)
 ALTER TABLE services
     ADD CONSTRAINT fk_services_active_deployment
-    FOREIGN KEY (active_deployment_id) REFERENCES deployments(id) ON DELETE SET NULL;
+    FOREIGN KEY (active_deployment_id, id) REFERENCES deployments (id, service_id)
+    ON DELETE RESTRICT;   -- FIX: active deployment must belong to this same service (and so the same org)
 CREATE INDEX idx_services_active_deployment ON services(active_deployment_id);
 
 -- ============================================================

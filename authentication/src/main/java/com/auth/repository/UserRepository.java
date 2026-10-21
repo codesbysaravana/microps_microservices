@@ -1,9 +1,5 @@
 package com.auth.repository;
 
-import com.auth.config.DatabaseConfig;
-import com.auth.domain.User;
-import com.auth.domain.UserCredential;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -14,19 +10,11 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Repository for managing User entity persistence against the 'users' table.
- */
+import com.auth.config.DatabaseConfig;
+import com.auth.domain.User;
+import com.auth.domain.UserCredential;
 public class UserRepository {
 
-    /**
-     * Saves a new user to the database. If user.getId() is null, PostgreSQL
-     * will automatically generate a UUID using gen_random_uuid().
-     *
-     * @param user The user domain object to insert
-     * @return The persisted user domain object with populated database timestamps and generated ID
-     * @throws SQLException if a database access error occurs
-     */
     public User save(User user) throws SQLException {
         boolean hasCustomId = user.getId() != null;
         String sql;
