@@ -1,52 +1,58 @@
 package com.auth.service;
 
-import com.auth.dto.AuthResponse;
-import com.auth.dto.LoginRequest;
-
+import java.sql.SQLException;
 import java.util.Map;
 
-public class AuthService {
+import com.auth.domain.User;
+import com.auth.dto.AuthResponse;
+import com.auth.dto.LoginRequest;
+import com.auth.infrastructure.db.repository.PostgresUserRepository;
 
+public class AuthService {
+    private final PostgresUserRepository userRepository;
     private final PasswordService passwordService;
     private final JwtService jwtService;
 
     public AuthService() {
-        this(new PasswordService(), new JwtService());
+        this(new PostgresUserRepository(), new PasswordService(), new JwtService());
     }
 
-    public AuthService(PasswordService passwordService, JwtService jwtService) {
+    public AuthService(PostgresUserRepository userRepository, PasswordService passwordService, JwtService jwtService) {
+        this.userRepository = userRepository;
         this.passwordService = passwordService;
         this.jwtService = jwtService;
     }
 
-    public boolean authenticate(LoginRequest loginRequest, String storedPasswordHash) {
-        if (loginRequest == null || loginRequest.getEmail() == null || loginRequest.getPassword() == null) {
-            return false;
-        }
-        if (storedPasswordHash == null || storedPasswordHash.isEmpty()) {
-            return false;
-        }
-        return passwordService.verify(storedPasswordHash, loginRequest.getPassword());
-    }
+    public AuthResponse login(LoginRequest req) throws SQLException {
+        // 1. Fetch user by email
+        User user = userRepository.findByEmail(req.getEmail())
+                .orElseThrow(() -> new IllegalArgumentException("User Not Available"));
 
-    public AuthResponse login(LoginRequest loginRequest, String storedPasswordHash) {
-        if (!authenticate(loginRequest, storedPasswordHash)) {
-            return null;
+        // 2. Verify password
+        if (!passwordService.verify(user.getPasswordHash(), req.getPassword())) {
+            throw new IllegalArgumentException("Invalid credentials");
         }
 
-        String token = jwtService.createToken(loginRequest.getEmail(), Map.of("email", loginRequest.getEmail()));
+        // 3. Issue JWT
+        String token = jwtService.createToken(user.getEmail(), Map.of("userId", user.getId().toString()));
         return new AuthResponse(token, jwtService.getExpirationMs() / 1000);
     }
 
-    public String hashPassword(String plainPassword) {
-        return passwordService.hash(plainPassword);
-    }
+    public AuthResponse signup(LoginRequest req) throws SQLException {
+        if (req == null || req.getEmail() == null || req.getPassword() == null) {
+            throw new IllegalArgumentException("Email and password are required");
+        }
 
-    public PasswordService getPasswordService() {
-        return passwordService;
-    }
+        if (userRepository.findByEmail(req.getEmail()).isPresent()) {
+            throw new IllegalArgumentException("Email already in use");
+        }
 
-    public JwtService getJwtService() {
-        return jwtService;
+        String passwordHash = passwordService.hash(req.getPassword());
+
+        String name = req.getEmail().split("@")[0];
+        User user = userRepository.createUser(name, req.getEmail(), passwordHash);
+
+        String token = jwtService.createToken(user.getEmail(), Map.of("userId", user.getId().toString()));
+        return new AuthResponse(token, jwtService.getExpirationMs() / 1000);
     }
 }

@@ -2,6 +2,7 @@ package com.auth.infrastructure.db;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+
 import javax.sql.DataSource;
 
 import com.auth.config.Config;
@@ -14,13 +15,31 @@ public class NeonDatabaseConnection {
 
     static {
         Config appConfig = Config.loadConfig();
-        String uri = appConfig.databaseConfig().dbUri();
-        if (uri != null && !uri.startsWith("jdbc:")) {
-            uri = "jdbc:" + uri;
-        }
+        String rawUri = appConfig.databaseConfig().dbUri();
 
         HikariConfig hikariConfig = new HikariConfig();
-        hikariConfig.setJdbcUrl(uri);
+        hikariConfig.setDriverClassName("org.postgresql.Driver");
+
+        if (rawUri != null && (rawUri.startsWith("postgres://") || rawUri.startsWith("postgresql://"))) {
+            java.net.URI uri = java.net.URI.create(rawUri);
+            String userInfo = uri.getUserInfo();
+            if (userInfo != null && userInfo.contains(":")) {
+                String[] parts = userInfo.split(":", 2);
+                hikariConfig.setUsername(parts[0]);
+                hikariConfig.setPassword(parts[1]);
+            }
+            int port = uri.getPort() > 0 ? uri.getPort() : 5432;
+            String path = uri.getPath();
+            String query = uri.getQuery();
+            String jdbcUrl = "jdbc:postgresql://" + uri.getHost() + ":" + port + path + (query != null ? "?" + query : "");
+            hikariConfig.setJdbcUrl(jdbcUrl);
+        } else {
+            hikariConfig.setJdbcUrl(rawUri);
+        }
+
+        if (rawUri != null && rawUri.contains("-pooler")) {
+            hikariConfig.addDataSourceProperty("prepareThreshold", "0");
+        }
 
         dataSource = new HikariDataSource(hikariConfig);
     }
