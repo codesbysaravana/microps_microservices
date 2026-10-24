@@ -1,11 +1,11 @@
 package com.auth;
 //using layered architecture here         
-import com.auth.handler.AuthHandler;
-
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+
+import com.auth.handler.AuthHandler;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
