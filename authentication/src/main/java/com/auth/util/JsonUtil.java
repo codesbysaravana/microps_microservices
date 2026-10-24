@@ -1,15 +1,22 @@
 package com.auth.util;
 
+import java.lang.reflect.Type;
+import java.time.Instant;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-
-import java.lang.reflect.Type;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonPrimitive;
+import com.google.gson.JsonSerializer;
 
 public class JsonUtil {
 
     private static final Gson GSON = new GsonBuilder()
             .disableHtmlEscaping()
-            .setDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+            .registerTypeAdapter(Instant.class, (JsonSerializer<Instant>) (src, type, ctx) ->
+                    src == null ? null : new JsonPrimitive(src.toString()))
+            .registerTypeAdapter(Instant.class, (JsonDeserializer<Instant>) (json, type, ctx) ->
+                    json == null ? null : Instant.parse(json.getAsString()))
             .create();
 
     private JsonUtil() {

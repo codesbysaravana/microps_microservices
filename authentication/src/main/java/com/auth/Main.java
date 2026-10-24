@@ -19,6 +19,8 @@ import io.netty.handler.codec.http.HttpServerCodec;
 
 public class Main {
     public static void main(String[] args) throws Exception {
+        System.setProperty("java.net.preferIPv4Stack", "true"); //force ipv4 for neon//by default jvm uses both ipv4and6
+
         EventLoopGroup bossGroup = new NioEventLoopGroup(); //connections
         EventLoopGroup workerGroup = new NioEventLoopGroup(); //all traffic
 

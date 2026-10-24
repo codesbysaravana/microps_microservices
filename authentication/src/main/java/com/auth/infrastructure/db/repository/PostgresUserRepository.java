@@ -47,6 +47,23 @@ public class PostgresUserRepository {
         return Optional.empty();
     }
 
+    public Optional<User> findById(UUID userId) throws SQLException {
+        String sql = "SELECT id, name, email, password_hash, email_verified_at, created_at, updated_at, deleted_at " + 
+                        "FROM users " + 
+                        "WHERE id = ? AND deleted_at IS NULL;";
+        try (Connection conn = NeonDatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setObject(1, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if(rs.next()) {
+                    return Optional.of(mapRowToUser(rs));
+                }
+            }
+        }
+
+        return Optional.empty();
+    }
+
     public Optional<User> findByEmail(String email) throws SQLException {
         String sql = "SELECT id, name, email, password_hash, email_verified_at, created_at, updated_at, deleted_at " +
                      "FROM users " +

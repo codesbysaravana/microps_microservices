@@ -19,6 +19,7 @@ public class NeonDatabaseConnection {
 
         HikariConfig hikariConfig = new HikariConfig();
         hikariConfig.setDriverClassName("org.postgresql.Driver");
+        hikariConfig.setConnectionTimeout(30000); //30 sec for serverless wakeup
 
         if (rawUri != null && (rawUri.startsWith("postgres://") || rawUri.startsWith("postgresql://"))) {
             java.net.URI uri = java.net.URI.create(rawUri);

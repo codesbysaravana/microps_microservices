@@ -4,6 +4,7 @@ import java.sql.SQLException;
 import java.util.concurrent.CompletionException;
 
 import com.auth.dto.LoginRequest;
+import com.auth.dto.UserProfileResponse;
 import com.auth.service.AuthService;
 import com.auth.util.JsonUtil;
 
@@ -70,6 +71,22 @@ public class AuthHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
                         sendResponse(ctx, HttpResponseStatus.OK, JsonUtil.toJson(authResponse));
                     }
                 });
+
+            } else if (path.equals("/me") && method.equals(HttpMethod.GET)) {
+                String authHeader = req.headers().get(HttpHeaderNames.AUTHORIZATION);
+                authService.authenticateRequest(authHeader).whenComplete((user, error) -> {
+                    if (error != null) {
+                        handleError(ctx, error);
+                    } else {
+                        try {
+                            UserProfileResponse profile = UserProfileResponse.from(user);
+                            sendResponse(ctx, HttpResponseStatus.OK, JsonUtil.toJson(profile));
+                        } catch (Exception e) {
+                            handleError(ctx, e);
+                        }
+                    }
+                });
+
             } else if (path.equals("/logout") && method.equals(HttpMethod.POST)) {
                 String authHeader = req.headers().get(HttpHeaderNames.AUTHORIZATION);
                 if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -95,10 +112,13 @@ public class AuthHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
         }
     }
 
-    private void handleError(ChannelHandlerContext ctx, Throwable throwable) {
-        Throwable cause = (throwable instanceof CompletionException && throwable.getCause() != null)
-                ? throwable.getCause()
-                : throwable;
+        private void handleError(ChannelHandlerContext ctx, Throwable throwable) {
+        Throwable cause = throwable;
+        while ((cause instanceof CompletionException || cause instanceof java.util.concurrent.ExecutionException)
+                && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+
         if (cause instanceof IllegalArgumentException) {
             sendResponse(ctx, HttpResponseStatus.UNAUTHORIZED, "{\"error\": \"" + cause.getMessage() + "\"}");
         } else if (cause instanceof RedisException) {
@@ -107,9 +127,11 @@ public class AuthHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
         } else if (cause instanceof SQLException) {
             sendResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "{\"error\": \"Database error occurred\"}");
         } else {
+            cause.printStackTrace(); // Prints the actual stack trace to console
             sendResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "{\"error\": \"Internal server error\"}");
         }
     }
+
 
     private void sendResponse(ChannelHandlerContext ctx, HttpResponseStatus status, String json) {
         FullHttpResponse response = new DefaultFullHttpResponse(
@@ -122,3 +144,32 @@ public class AuthHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
 }
+
+/*
+ * FIXES by (priyan):
+ * 
+ * 1. THE PROBLEM WITH TRADITIONAL BLOCKING IN NETTY:
+ *    Netty runs on a tiny number of threads (EventLoops) that handle thousands of network connections.
+ *    If an EventLoop thread pauses to run a slow database query (JDBC) or a heavy CPU computation
+ *    (Argon2 password hashing, which intentionally burns 50-100ms of CPU), that entire thread FREEZES.
+ *    Every other user whose connection is assigned to that thread gets blocked and experiences lag.
+ *
+ * 2. THE SOLUTION (HYBRID REACTIVE + OFF-LOADED WORKERS):
+ *    - Fast, In-Memory Work: JWT validation (cryptographic math) happens in nanoseconds directly on Netty.
+ *    - Heavy / Blocking Work: JDBC queries and Argon2 hashing are pushed to a dedicated 
+ *      background thread pool (BLOCKING_EXECUTOR) using CompletableFuture.supplyAsync().
+ *    - Non-Blocking Network I/O: Redis operations use Lettuce's async client, which returns
+ *      RedisFutures without blocking any threads.
+ *
+ * 3. DUAL-LAYER SECURITY (JWT + REDIS SESSIONS):
+ *    - Layer 1 (JWT Verification): Checks token signature and expiration purely in-memory. Zero network calls.
+ *    - Layer 2 (Redis Active Session): Look up the session ID ('sid') in Redis. This enables true, instant
+ *      revocation on logout (deleting from Redis immediately invalidates the token, even if the JWT hasn't expired).
+ *      It also "slides" the 30-minute idle TTL forward on every valid request.
+ *
+ * 4. THE DOUBLE-WRAPPED EXCEPTION TRICK:
+ *    When you chain CompletableFuture.supplyAsync().thenCompose(), any error thrown inside the first 
+ *    block gets wrapped inside a CompletionException by each stage. In AuthHandler, we must unwrap
+ *    the exception in a loop (while getCause() != null) to peel off the layers and reveal the real 
+ *    error (e.g., IllegalArgumentException for "Invalid credentials"), rather than failing with 500.
+ */
