@@ -2,8 +2,10 @@ package com.auth.handler;
 
 import java.sql.SQLException;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.RejectedExecutionException;
 
 import com.auth.dto.LoginRequest;
+import com.auth.dto.RefreshRequest;
 import com.auth.dto.UserProfileResponse;
 import com.auth.service.AuthService;
 import com.auth.util.JsonUtil;
@@ -72,6 +74,20 @@ public class AuthHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
                     }
                 });
 
+            } else if (path.equals("/refresh") && method.equals(HttpMethod.POST)) {
+                String body = req.content().toString(CharsetUtil.UTF_8);
+                RefreshRequest refreshReq = JsonUtil.fromJson(body, RefreshRequest.class);
+                if (refreshReq == null || refreshReq.getRefreshToken() == null || refreshReq.getRefreshToken().isBlank()) {
+                    sendResponse(ctx, HttpResponseStatus.BAD_REQUEST, "{\"error\": \"Refresh token is required\"}");
+                    return;
+                }
+                authService.refreshTokens(refreshReq.getRefreshToken()).whenComplete((authResponse, error) -> {
+                    if (error != null) {
+                        handleError(ctx, error);
+                    } else {
+                        sendResponse(ctx, HttpResponseStatus.OK, JsonUtil.toJson(authResponse));
+                    }
+                });
             } else if (path.equals("/me") && method.equals(HttpMethod.GET)) {
                 String authHeader = req.headers().get(HttpHeaderNames.AUTHORIZATION);
                 authService.authenticateRequest(authHeader).whenComplete((user, error) -> {
@@ -112,7 +128,7 @@ public class AuthHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
         }
     }
 
-        private void handleError(ChannelHandlerContext ctx, Throwable throwable) {
+    private void handleError(ChannelHandlerContext ctx, Throwable throwable) {
         Throwable cause = throwable;
         while ((cause instanceof CompletionException || cause instanceof java.util.concurrent.ExecutionException)
                 && cause.getCause() != null) {
@@ -121,19 +137,29 @@ public class AuthHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
         if (cause instanceof IllegalArgumentException) {
             sendResponse(ctx, HttpResponseStatus.UNAUTHORIZED, "{\"error\": \"" + cause.getMessage() + "\"}");
+        } else if (cause instanceof RejectedExecutionException) {
+            // OVERLOAD SHEDDING: Thread pool & queue are saturated!
+            // Reject fast without stalling Netty I/O threads.
+            sendResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "{\"error\": \"Server is busy, please retry shortly\"}", "5");
         } else if (cause instanceof RedisException) {
             // FAIL CLOSED: If Redis is down, reject session creation/validation immediately!
             sendResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE, "{\"error\": \"Session service temporarily unavailable\"}");
         } else if (cause instanceof SQLException) {
             sendResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "{\"error\": \"Database error occurred\"}");
         } else {
-            cause.printStackTrace(); // Prints the actual stack trace to console
-            sendResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "{\"error\": \"Internal server error\"}");
+            cause.printStackTrace();
+            String msg = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+            sendResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "{\"error\": \"" + msg.replace("\"", "'").replace("\n", " ") + "\"}");
         }
     }
 
 
+
     private void sendResponse(ChannelHandlerContext ctx, HttpResponseStatus status, String json) {
+        sendResponse(ctx, status, json, null);
+    }
+
+    private void sendResponse(ChannelHandlerContext ctx, HttpResponseStatus status, String json, String retryAfterSeconds) {
         FullHttpResponse response = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1,
                 status,
@@ -141,8 +167,12 @@ public class AuthHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
         );
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json");
         response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+        if (retryAfterSeconds != null) {
+            response.headers().set(HttpHeaderNames.RETRY_AFTER, retryAfterSeconds);
+        }
         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
+
 }
 
 /*

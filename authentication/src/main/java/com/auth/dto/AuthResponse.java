@@ -2,14 +2,16 @@ package com.auth.dto;
 
 public class AuthResponse {
     private String token;
+    private String refreshToken; //new (long lived)
     private String tokenType = "Bearer";
     private long expiresIn;
 
     public AuthResponse() {
     }
 
-    public AuthResponse(String token, long expiresIn) {
+    public AuthResponse(String token, String refreshToken, long expiresIn) {
         this.token = token;
+        this.refreshToken = refreshToken;
         this.expiresIn = expiresIn;
     }
 
@@ -19,6 +21,13 @@ public class AuthResponse {
 
     public void setToken(String token) {
         this.token = token;
+    }
+
+    public String getRefreshToken() {
+        return refreshToken;
+    }
+    public void setRefreshToken(String refreshToken) {
+        this.refreshToken = refreshToken;
     }
 
     public String getTokenType() {
